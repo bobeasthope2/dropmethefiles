@@ -79,6 +79,10 @@ When a transfer works on the same network but fails across two NATed networks, o
 - `link to xxxxxxxx…: direct (srflx ↔ srflx)` — connected via STUN hole-punching, all good.
 - `connection attempt FAILED — no direct path…` — at least one side's NAT is too strict
   (symmetric NAT / mobile CGNAT) or blocks UDP. These pairs physically require a TURN relay.
+- `WARNING: this device's clock is X min ahead/behind` — Nostr discovery filters events by
+  timestamp, so a skewed system clock makes a client deaf to announcements while looking
+  healthily connected. The app compensates for the session, but fix the device's clock
+  (enable automatic time sync) for a permanent cure.
 
 There is no reliable free public TURN any more, so bring your own. Two routes:
 

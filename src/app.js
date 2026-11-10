@@ -49,6 +49,37 @@ const RELAY_URLS = (() => {
   ]
 })()
 
+// Nostr discovery is clock-sensitive: trystero subscribes with
+// `since: now()` and stamps events with the local clock, so a device whose
+// clock is minutes off looks connected but is deaf (its filter drops every
+// announcement) and/or mute (relays reject future-dated events). Measure
+// skew against our own host's HTTP Date header; when it's large, warn and
+// compensate for this session by offsetting Date.now on this page.
+let clockSkewApplied = null
+const checkClock = async log => {
+  if (clockSkewApplied !== null) {
+    if (clockSkewApplied) log(`note: still compensating for a ${(Math.abs(clockSkewApplied) / 60000).toFixed(1)} min clock offset this session`)
+    return
+  }
+  clockSkewApplied = 0
+  try {
+    const t0 = Date.now()
+    const res = await fetch(location.origin + location.pathname, {method: 'HEAD', cache: 'no-store'})
+    const dateHdr = res.headers.get('date')
+    if (!dateHdr) return
+    const server = new Date(dateHdr).getTime() + (Date.now() - t0) / 2
+    const skew = Date.now() - server // > 0 means this device's clock is ahead
+    if (Math.abs(skew) > 90_000) {
+      clockSkewApplied = skew
+      const realNow = Date.now.bind(Date)
+      Date.now = () => realNow() - skew
+      log(`WARNING: this device's clock is ${(Math.abs(skew) / 60000).toFixed(1)} min ` +
+        `${skew > 0 ? 'AHEAD' : 'behind'} — that breaks peer discovery. Compensating for this ` +
+        'session; fix the system clock (enable automatic time sync) to solve it permanently.')
+    }
+  } catch { /* best-effort — offline or HEAD unsupported */ }
+}
+
 // Report signalling-relay health into the given log a few seconds after
 // joining, and again later — a receiver stuck on "still looking" plus
 // "0/8 relays" means this network blocks the relays, not a NAT problem.
@@ -305,6 +336,7 @@ const renderInvites = async () => {
 }
 
 const startHosting = async () => {
+  await checkClock(hlog)
   const roomId = await deriveRoomId(share.secret)
   const password = await derivePassword(share.secret)
   const room = joinRoom({appId: APP_ID, password, rtcConfig: RTC_CONFIG, relayUrls: RELAY_URLS}, roomId)
@@ -451,6 +483,7 @@ $('#connectBtn').onclick = async () => {
   $('#rxStatus').textContent = 'Looking for the sharer… their tab must be open.'
   rlog('joining room')
 
+  await checkClock(rlog)
   const roomId = await deriveRoomId(secret)
   const password = await derivePassword(secret)
   const room = joinRoom({appId: APP_ID, password, rtcConfig: RTC_CONFIG, relayUrls: RELAY_URLS}, roomId)
