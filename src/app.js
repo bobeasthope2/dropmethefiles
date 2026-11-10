@@ -480,6 +480,8 @@ $('#connectBtn').onclick = async () => {
 
   rx?.room.leave()
   $('#connectBtn').disabled = true
+  $('#offerCard').hidden = true // drop any listing from a previous share
+  $('#fileRows').replaceChildren()
   $('#rxStatus').textContent = 'Looking for the sharer… their tab must be open.'
   rlog('joining room')
 
@@ -507,15 +509,18 @@ $('#connectBtn').onclick = async () => {
   room.onPeerLeave(id => {
     if (rx?.sharerId === id) {
       rlog('sharer went away')
-      $('#rxStatus').textContent = 'The sharer disconnected. Ask them to reopen their sharing tab, then reconnect.'
+      $('#rxStatus').textContent = 'The sharer disconnected. Ask them to check their sharing tab, then press Connect to rejoin.'
       if (rx.active) rx.active.fail(new Error('sharer disconnected'))
       rx.sharerId = null
+      $('#connectBtn').disabled = false
     }
   })
 
   onMani((mani, peerId) => {
     if (!rx || rx.sharerId) return
     rx.sharerId = peerId
+    rx.files.clear() // a returning sharer re-sends the manifest
+    rx.order.length = 0
     for (const f of mani.files || []) {
       const entry = {id: String(f.id), path: sanitizePath(f.path), size: +f.size || 0, type: String(f.type || ''), got: 0, state: 'idle'}
       rx.files.set(entry.id, entry)
@@ -523,6 +528,7 @@ $('#connectBtn').onclick = async () => {
     }
     const total = [...rx.files.values()].reduce((s, f) => s + f.size, 0)
     $('#rxStatus').textContent = ''
+    $('#recvMsg').textContent = ''
     $('#offerTitle').textContent = `Files shared with you (${rx.files.size})`
     $('#offerNote').hidden = !mani.note
     $('#offerNote').textContent = mani.note || ''
@@ -550,8 +556,9 @@ $('#connectBtn').onclick = async () => {
 
   setTimeout(() => {
     if (rx && !rx.sharerId && rx.room === room) {
-      $('#rxStatus').textContent = 'Still looking… check the sharer\'s tab is open and the key is current. ' +
+      $('#rxStatus').textContent = 'Still looking… check the sharer\'s tab is open and the key is current, then press Connect to retry. ' +
         'If the Activity log below reports a FAILED connection attempt, these two networks need a TURN relay (see the project README).'
+      $('#connectBtn').disabled = false
     }
   }, 20000)
 }
@@ -640,9 +647,21 @@ const makeSink = async (suggestedName, mime) => {
 
 // Request one file from the sharer and pump its chunks into `write`.
 // Chunks arrive in order (reliable ordered data channel); writes are
-// chained so async sinks keep that order.
+// chained so async sinks keep that order. A watchdog fails the transfer
+// if the sharer stops responding, so a vanished peer can't jam the
+// download queue until the page is reloaded.
 const transfer = (f, write, done) => new Promise((resolve, reject) => {
   let chain = Promise.resolve()
+  let lastData = performance.now()
+  const watchdog = setInterval(() => {
+    if (performance.now() - lastData > 25_000) {
+      rx.active = null
+      clearInterval(watchdog)
+      reject(new Error('no response from the sharer — their tab may be closed or asleep. Reconnect and try again.'))
+    }
+  }, 5000)
+  const res = v => { clearInterval(watchdog); resolve(v) }
+  const rej = e => { clearInterval(watchdog); reject(e) }
   f.state = 'active'
   f.got = 0
   paintRow(f)
@@ -650,6 +669,7 @@ const transfer = (f, write, done) => new Promise((resolve, reject) => {
   rx.active = {
     id: f.id,
     feed: (u8, last) => {
+      lastData = performance.now()
       chain = chain.then(async () => {
         if (u8.length) await write(u8, last)
         else if (last) await write(new Uint8Array(0), true)
@@ -660,11 +680,11 @@ const transfer = (f, write, done) => new Promise((resolve, reject) => {
           await done?.()
           f.state = 'done'
           paintRow(f)
-          resolve()
+          res()
         }
-      }).catch(err => { rx.active = null; reject(err) })
+      }).catch(err => { rx.active = null; rej(err) })
     },
-    fail: err => { rx.active = null; reject(err) },
+    fail: err => { rx.active = null; rej(err) },
   }
   rx.sendWant({id: f.id}, rx.sharerId)
 })
@@ -689,6 +709,10 @@ const runQueue = async () => {
 }
 
 const downloadOne = async f => {
+  if (!rx?.sharerId) {
+    $('#recvMsg').textContent = 'The sharer is not connected — press Connect to rejoin, or ask them to check their tab.'
+    return
+  }
   let sink
   try { sink = await makeSink(baseName(f.path), f.type) } // picker needs the click's user gesture
   catch { return } // user cancelled the save dialog
@@ -710,6 +734,10 @@ const downloadOne = async f => {
 
 $('#dlAllBtn').onclick = async () => {
   if (!rx || !rx.files.size) return
+  if (!rx.sharerId) {
+    $('#recvMsg').textContent = 'The sharer is not connected — press Connect to rejoin, or ask them to check their tab.'
+    return
+  }
   let sink
   try { sink = await makeSink('dropmethefiles.zip', 'application/zip') }
   catch { return }
@@ -766,6 +794,19 @@ window.addEventListener('beforeunload', e => {
     e.preventDefault()
     e.returnValue = ''
   }
+})
+
+// A fresh invite link clicked into an already-open tab only changes the
+// URL fragment — no reload happens. Reset the receive side for the new key.
+window.addEventListener('hashchange', () => {
+  rx?.room.leave()
+  rx = null
+  $('#offerCard').hidden = true
+  $('#fileRows').replaceChildren()
+  $('#connectBtn').disabled = false
+  $('#recvMsg').textContent = ''
+  $('#rxStatus').textContent = ''
+  prefillFromHash()
 })
 
 prefillFromHash()
