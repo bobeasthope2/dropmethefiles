@@ -40,6 +40,10 @@ sharer's browser                          recipient's browser
 - **No server of ours anywhere.** GitHub Pages only serves the HTML/JS. Signalling (the few
   kilobytes needed to set up the tunnel) rides on public [Nostr](https://nostr.com) relays via
   [Trystero](https://github.com/dmotz/trystero); the file data itself is pure WebRTC peer-to-peer.
+  The app pins its own list of eight large public relays (trystero's default pool contained dead
+  ones) and both ends report relay health in the Activity log (`signalling: 8/8 relays
+  connected`). For experiments you can override the list via
+  `localStorage.setItem('dmtf-relays', JSON.stringify(['wss://…']))` on **both** ends.
 - **The key is everything.** A share key looks like `secret.token`. The room name and the
   signalling encryption password are derived from the secret by hashing, so without the key you
   can't even find the room, let alone read the handshake. The token is

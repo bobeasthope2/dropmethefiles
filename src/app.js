@@ -9,7 +9,7 @@
 // only. A recipient's key is bound to their email address with an HMAC,
 // so a key only works together with the address it was issued for.
 
-import {joinRoom} from 'trystero/nostr'
+import {joinRoom, getRelaySockets} from 'trystero/nostr'
 import {Zip, ZipPassThrough} from 'fflate'
 
 const APP_ID = 'dropmethefiles-v1'
@@ -26,6 +26,45 @@ const extraIceServers = (() => {
   try { return JSON.parse(localStorage.getItem('dmtf-ice') || '[]') }
   catch { return [] }
 })()
+
+// Pinned signalling relays. Trystero's default pool proved unhealthy (2 of
+// the 5 it assigned this app were dead), and discovery needs both peers on
+// at least one common relay — so pin a verified set of large public ones.
+// Both ends must share this list; override for testing via localStorage
+// 'dmtf-relays' (JSON array of wss:// URLs, set on BOTH ends, then reload).
+const RELAY_URLS = (() => {
+  try {
+    const custom = JSON.parse(localStorage.getItem('dmtf-relays') || 'null')
+    if (Array.isArray(custom) && custom.length) return custom
+  } catch { /* fall through to defaults */ }
+  return [
+    'wss://relay.damus.io',
+    'wss://nos.lol',
+    'wss://relay.primal.net',
+    'wss://nostr.mom',
+    'wss://relay.snort.social',
+    'wss://offchain.pub',
+    'wss://relay.nostr.net',
+    'wss://nostr.oxtr.dev',
+  ]
+})()
+
+// Report signalling-relay health into the given log a few seconds after
+// joining, and again later — a receiver stuck on "still looking" plus
+// "0/8 relays" means this network blocks the relays, not a NAT problem.
+const reportRelays = log => [4000, 15000].forEach(ms => setTimeout(() => {
+  const sockets = getRelaySockets()
+  const entries = Object.entries(sockets)
+  if (!entries.length) return
+  const down = entries.filter(([, ws]) => ws.readyState !== WebSocket.OPEN).map(([url]) => url)
+  if (!down.length) {
+    log(`signalling: all ${entries.length} relays connected`)
+  } else if (down.length < entries.length) {
+    log(`signalling: ${entries.length - down.length}/${entries.length} relays connected (down: ${down.join(', ')})`)
+  } else {
+    log('signalling: NO relays reachable — this network appears to block the signalling relays, so peers cannot find each other here.')
+  }
+}, ms))
 const RTC_CONFIG = {
   iceServers: [
     {urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']},
@@ -268,7 +307,8 @@ const renderInvites = async () => {
 const startHosting = async () => {
   const roomId = await deriveRoomId(share.secret)
   const password = await derivePassword(share.secret)
-  const room = joinRoom({appId: APP_ID, password, rtcConfig: RTC_CONFIG}, roomId)
+  const room = joinRoom({appId: APP_ID, password, rtcConfig: RTC_CONFIG, relayUrls: RELAY_URLS}, roomId)
+  reportRelays(hlog)
 
   const [sendMani] = room.makeAction('mani')
   const [sendDeny] = room.makeAction('deny')
@@ -413,7 +453,8 @@ $('#connectBtn').onclick = async () => {
 
   const roomId = await deriveRoomId(secret)
   const password = await derivePassword(secret)
-  const room = joinRoom({appId: APP_ID, password, rtcConfig: RTC_CONFIG}, roomId)
+  const room = joinRoom({appId: APP_ID, password, rtcConfig: RTC_CONFIG, relayUrls: RELAY_URLS}, roomId)
+  reportRelays(rlog)
 
   const [sendHello] = room.makeAction('hello')
   const [, onMani] = room.makeAction('mani')
