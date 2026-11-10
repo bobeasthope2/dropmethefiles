@@ -1,2 +1,4 @@
 node_modules/
 .DS_Store
+# unpublished draft material — remove this line when the article is cleared to go public
+article/
