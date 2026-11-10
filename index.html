@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dropmethefiles — direct browser-to-browser file sharing</title>
+<meta name="description" content="Share files straight from your browser tab. Encrypted, peer-to-peer, no server ever touches your data.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">📦 dropmethefiles</div>
+  <p class="tag">Share files straight from your browser — encrypted, peer-to-peer, no server in the middle.</p>
+  <nav class="tabs">
+    <button id="tabSend" class="tab active">Send files</button>
+    <button id="tabRecv" class="tab">Receive files</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============ SEND ============ -->
+<section id="sendPanel">
+
+  <div class="card">
+    <h2><span class="step">1</span> Pick files or a folder</h2>
+    <div class="row">
+      <label class="btn">Choose files<input id="fileInput" type="file" multiple hidden></label>
+      <label class="btn">Choose a folder<input id="dirInput" type="file" webkitdirectory hidden></label>
+      <span id="pickSummary" class="muted">Nothing picked yet</span>
+      <button id="clearFiles" class="linkbtn" hidden>clear</button>
+    </div>
+    <div id="dropZone" class="drop">…or drop files here</div>
+    <ul id="pickList" class="filelist"></ul>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2</span> Who gets them?</h2>
+    <textarea id="emails" rows="2" placeholder="Recipient email addresses — e.g. alice@example.com, bob@example.com"></textarea>
+    <input id="note" type="text" maxlength="200" placeholder="Optional note shown to recipients">
+    <div class="row">
+      <button id="createBtn" class="btn primary">Create share &amp; generate keys</button>
+      <span id="sendMsg" class="err" role="alert"></span>
+    </div>
+  </div>
+
+  <div id="shareLive" hidden>
+    <div class="card banner">
+      <span class="livedot"></span>
+      <div><b>Share is live.</b> Keep this tab open — files are served directly from this browser. Closing or reloading the tab ends the share and invalidates the keys.</div>
+      <button id="stopBtn" class="btn danger">Stop sharing</button>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">3</span> Send each person their key</h2>
+      <p class="muted">Each key only works with the email address it was made for. Email it, text it — any channel you trust.</p>
+      <div id="invites"></div>
+    </div>
+
+    <div class="card">
+      <h2>Connected recipients</h2>
+      <div id="peerList" class="muted">No one connected yet.</div>
+    </div>
+
+    <details class="card logbox"><summary>Activity log</summary><pre id="hostLog"></pre></details>
+  </div>
+
+</section>
+
+<!-- ============ RECEIVE ============ -->
+<section id="recvPanel" hidden>
+
+  <div class="card">
+    <h2>Enter your key</h2>
+    <input id="keyIn" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the key you were sent, e.g. 3xK…Qc.pZ7…tR">
+    <input id="emailIn" type="email" autocomplete="email" placeholder="Your email address (the one the key was issued for)">
+    <div class="row">
+      <button id="connectBtn" class="btn primary">Connect</button>
+      <span id="recvMsg" class="err" role="alert"></span>
+    </div>
+    <p id="rxStatus" class="muted"></p>
+  </div>
+
+  <div id="offerCard" class="card" hidden>
+    <h2 id="offerTitle">Files shared with you</h2>
+    <p id="offerNote" class="note" hidden></p>
+    <div class="row">
+      <button id="dlAllBtn" class="btn primary">Download all (.zip)</button>
+      <span id="rxTotals" class="muted"></span>
+    </div>
+    <table class="ftable"><tbody id="fileRows"></tbody></table>
+  </div>
+
+  <details class="card logbox"><summary>Activity log</summary><pre id="rxLog"></pre></details>
+
+</section>
+
+</main>
+
+<footer>
+  <p><b>How it works:</b> this page is plain static files (GitHub Pages) — it has no server and never sees your data.
+  Browsers find each other through public signalling relays using a room name derived from your key; that handshake is
+  encrypted with the key, so relays only ever see random identifiers and ciphertext. Files then move directly between
+  browsers over WebRTC (DTLS-encrypted). If both sides are behind strict firewalls, traffic falls back to a TURN relay,
+  which still only carries ciphertext.</p>
+  <p>Anyone can send: open this page, pick files, enter emails. Keys are bound to the email address they were issued for.
+  <a href="https://github.com/bobeasthope2/dropmethefiles">Source on GitHub</a> · MIT licensed · fork it and host your own —
+  keys work across any copy of the app.</p>
+</footer>
+
+<script defer src="bundle.js"></script>
+</body>
+</html>

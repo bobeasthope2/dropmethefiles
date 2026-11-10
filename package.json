@@ -1,0 +1,19 @@
+{
+  "name": "dropmethefiles",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Direct, encrypted, browser-to-browser file sharing. Static app, no server.",
+  "scripts": {
+    "build": "esbuild src/app.js --bundle --minify --format=iife --target=es2021 --outfile=bundle.js",
+    "watch": "esbuild src/app.js --bundle --format=iife --target=es2021 --outfile=bundle.js --watch",
+    "serve": "python3 -m http.server 8137"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "trystero": "^0.21.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2"
+  }
+}

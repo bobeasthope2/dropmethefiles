@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dropmethefiles — loopback test</title>
+<style>
+  body { margin: 0; font: 14px system-ui; background: #222; color: #ddd; }
+  p { margin: 8px 12px; }
+  .split { display: flex; height: calc(100vh - 40px); }
+  iframe { flex: 1; border: 0; border-right: 2px solid #444; background: #fff; }
+</style>
+</head>
+<body>
+<p>Loopback test: left = sender, right = receiver (same machine, real WebRTC + signalling). <code>?nofs</code> forces in-memory saves so no OS dialogs appear.</p>
+<div class="split">
+  <iframe id="a" src="index.html?nofs"></iframe>
+  <iframe id="b" src="index.html?nofs"></iframe>
+</div>
+</body>
+</html>
