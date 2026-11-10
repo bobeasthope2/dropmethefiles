@@ -16,15 +16,21 @@ const APP_ID = 'dropmethefiles-v1'
 const READ_CHUNK = 256 * 1024 // file read/send unit; trystero re-chunks for the wire
 const FORCE_MEMORY = new URLSearchParams(location.search).has('nofs')
 
+// STUN only by default. Public free TURN no longer exists (Open Relay was
+// shut down — its entries also stalled ICE gathering for everyone). Pairs of
+// strict/symmetric NATs (e.g. mobile CGNAT) need a TURN relay: add yours in
+// localStorage under 'dmtf-ice' (JSON array of RTCIceServer, no redeploy
+// needed) or append it here. TURN only ever relays DTLS ciphertext. See
+// README → "Strict NATs and TURN".
+const extraIceServers = (() => {
+  try { return JSON.parse(localStorage.getItem('dmtf-ice') || '[]') }
+  catch { return [] }
+})()
 const RTC_CONFIG = {
   iceServers: [
     {urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']},
     {urls: 'stun:stun.cloudflare.com:3478'},
-    // Free public TURN (Open Relay). Replace with your own for serious use —
-    // see README. TURN only ever relays DTLS ciphertext.
-    {urls: 'turn:staticauth.openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject'},
-    {urls: 'turn:staticauth.openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject'},
-    {urls: 'turns:staticauth.openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject'},
+    ...extraIceServers,
   ],
 }
 
@@ -103,6 +109,47 @@ const el = (tag, cls, text) => {
   if (text !== undefined) n.textContent = text
   return n
 }
+
+// ------------------------------------------------- connection diagnostics
+// Trystero only exposes a peer once its data channel is open, so failing
+// ICE attempts are invisible through its API. Wrap RTCPeerConnection (this
+// page only creates them via trystero) to surface hard failures in the log.
+let diagLog = () => {}
+let lastFailNote = 0
+const NativePC = window.RTCPeerConnection
+window.RTCPeerConnection = class extends NativePC {
+  constructor(...cfg) {
+    super(...cfg)
+    this.addEventListener('iceconnectionstatechange', () => {
+      if (this.iceConnectionState === 'failed' && performance.now() - lastFailNote > 10000) {
+        lastFailNote = performance.now()
+        diagLog('connection attempt FAILED — no direct path between these networks. ' +
+          'A TURN relay is needed (none configured by default — see README → "Strict NATs and TURN").')
+      }
+    })
+  }
+}
+
+// Once a peer is connected, report which path won: direct or relayed.
+const reportPath = (room, peerId, log) => setTimeout(async () => {
+  const pc = room.getPeers()[peerId]
+  if (!pc) return
+  try {
+    const stats = await pc.getStats()
+    let pair = null
+    stats.forEach(s => {
+      if (s.type === 'transport' && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId)
+    })
+    if (!pair) stats.forEach(s => {
+      if (!pair && s.type === 'candidate-pair' && s.state === 'succeeded' && (s.selected || s.nominated)) pair = s
+    })
+    if (!pair) return
+    const lt = stats.get(pair.localCandidateId)?.candidateType || '?'
+    const rt = stats.get(pair.remoteCandidateId)?.candidateType || '?'
+    const via = lt === 'relay' || rt === 'relay' ? 'via TURN relay' : 'direct'
+    log(`link to ${peerId.slice(0, 8)}…: ${via} (${lt} ↔ ${rt})`)
+  } catch { /* stats are best-effort */ }
+}, 1000)
 
 // ---------------------------------------------------------------- tabs
 
@@ -231,8 +278,12 @@ const startHosting = async () => {
   const [, onAbort] = room.makeAction('abort')
 
   host = {room, peers: new Map(), sendMani, sendDeny, sendChunk}
+  diagLog = hlog
 
-  room.onPeerJoin(id => hlog(`peer ${id.slice(0, 8)}… connected, waiting for its key`))
+  room.onPeerJoin(id => {
+    hlog(`peer ${id.slice(0, 8)}… connected, waiting for its key`)
+    reportPath(room, id, hlog)
+  })
   room.onPeerLeave(id => {
     const p = host?.peers.get(id)
     if (p) hlog(`${p.email} disconnected`)
@@ -372,9 +423,11 @@ $('#connectBtn').onclick = async () => {
   const [sendAbort] = room.makeAction('abort')
 
   rx = {room, sharerId: null, files: new Map(), order: [], active: null, queue: [], running: false, sendWant, sendAbort}
+  diagLog = rlog
 
   room.onPeerJoin(id => {
     rlog(`peer ${id.slice(0, 8)}… found, presenting key`)
+    reportPath(room, id, rlog)
     sendHello({email, token}, id)
   })
   room.onPeerLeave(id => {
@@ -423,7 +476,8 @@ $('#connectBtn').onclick = async () => {
 
   setTimeout(() => {
     if (rx && !rx.sharerId && rx.room === room) {
-      $('#rxStatus').textContent = 'Still looking… make sure the sharer\'s tab is open and the key is current.'
+      $('#rxStatus').textContent = 'Still looking… check the sharer\'s tab is open and the key is current. ' +
+        'If the Activity log below reports a FAILED connection attempt, these two networks need a TURN relay (see the project README).'
     }
   }, 20000)
 }

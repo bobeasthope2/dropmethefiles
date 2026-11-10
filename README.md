@@ -34,7 +34,7 @@ sharer's browser                          recipient's browser
       │     (encrypted WebRTC signalling)         │   payloads AES-GCM-encrypted with key-derived password
       │                                           │
       └━━━━━━━━ WebRTC data channel ━━━━━━━━━━━━━━┘   DTLS-encrypted, direct P2P
-                 (TURN fallback if both sides are behind strict NATs — relays ciphertext only)
+                 (strict-NAT pairs need an optional TURN relay — carries ciphertext only; see below)
 ```
 
 - **No server of ours anywhere.** GitHub Pages only serves the HTML/JS. Signalling (the few
@@ -59,13 +59,43 @@ sharer's browser                          recipient's browser
   with the tab, and a new share means new keys.
 - Possession of a key (plus its email address) is what grants access — the app can't
   cryptographically prove email ownership without a server. Treat keys like the files themselves.
-- The bundled TURN servers are a free public service (Open Relay / metered.ca) and may be slow or
-  go away; most home/office connections connect directly via STUN and never need them. For
-  serious use, run your own TURN (e.g. coturn) and swap the entries in `RTC_CONFIG` in
-  `src/app.js`.
+- No TURN relay ships by default (there is no longer any trustworthy free public TURN — Open
+  Relay was shut down). Most network pairs connect directly via STUN; pairs of strict/symmetric
+  NATs (two mobile connections, some CGNAT ISPs, UDP-blocking corporate networks) won't connect
+  until you add a TURN server — see **Strict NATs and TURN** below.
 - No resume: an interrupted download restarts from scratch.
 - Browsers without the File System Access API (Firefox, Safari) buffer downloads in memory, so
   very large files can exhaust RAM there.
+
+## Strict NATs and TURN
+
+When a transfer works on the same network but fails across two NATed networks, open the
+**Activity log** panel on either side:
+
+- `link to xxxxxxxx…: direct (srflx ↔ srflx)` — connected via STUN hole-punching, all good.
+- `connection attempt FAILED — no direct path…` — at least one side's NAT is too strict
+  (symmetric NAT / mobile CGNAT) or blocks UDP. These pairs physically require a TURN relay.
+
+There is no reliable free public TURN any more, so bring your own. Two routes:
+
+1. **Hosted:** a [metered.ca](https://www.metered.ca/stun-turn) free account (50 GB/month) gives
+   you static TURN credentials. Similar: [ExpressTURN](https://www.expressturn.com).
+2. **Self-hosted:** [coturn](https://github.com/coturn/coturn) on any box with a public IP —
+   `turnserver -a -u user:pass -r myrealm --listening-port 3478` plus TCP 443 for
+   firewall-hostile networks.
+
+Then either edit `RTC_CONFIG` in `src/app.js` and rebuild, or — no redeploy needed — paste your
+servers into the browser console on the app page (both sides benefit even if only the sharer
+sets it, but set it on both for best results):
+
+```js
+localStorage.setItem('dmtf-ice', JSON.stringify([
+  {urls: 'turn:turn.example.com:3478', username: 'user', credential: 'pass'},
+  {urls: 'turns:turn.example.com:443?transport=tcp', username: 'user', credential: 'pass'},
+]))
+```
+
+Reload the tab afterwards. TURN only ever relays DTLS ciphertext — it cannot read the files.
 
 ## Development
 

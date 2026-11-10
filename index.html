@@ -103,8 +103,9 @@
   <p><b>How it works:</b> this page is plain static files (GitHub Pages) — it has no server and never sees your data.
   Browsers find each other through public signalling relays using a room name derived from your key; that handshake is
   encrypted with the key, so relays only ever see random identifiers and ciphertext. Files then move directly between
-  browsers over WebRTC (DTLS-encrypted). If both sides are behind strict firewalls, traffic falls back to a TURN relay,
-  which still only carries ciphertext.</p>
+  browsers over WebRTC (DTLS-encrypted), with NAT traversal via STUN. Rare strict-NAT pairs (e.g. two mobile
+  connections) additionally need a TURN relay — the README explains how to plug one in; it would only ever carry
+  ciphertext.</p>
   <p>Anyone can send: open this page, pick files, enter emails. Keys are bound to the email address they were issued for.
   <a href="https://github.com/bobeasthope2/dropmethefiles">Source on GitHub</a> · MIT licensed · fork it and host your own —
   keys work across any copy of the app.</p>
